@@ -1,0 +1,19 @@
+{
+  "name": "mtg-discord-bot",
+  "version": "1.0.0",
+  "description": "MTG Discord bot — /get, /synergy, /stndmeta powered by Scryfall & MTGGoldfish",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^2.4.0",
+    "cheerio": "^1.0.0",
+    "discord-api-types": "^0.37.97",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
