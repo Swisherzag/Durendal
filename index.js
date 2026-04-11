@@ -1,13 +1,9 @@
-// ============================================================
-// MTG Discord Bot — Unified Entry Point
-// Commands: /get  |  /synergy  |  /stndmeta  |  /cmdrmeta  |  /mdrnmeta  |  /upcomingsets
-// Uses the Scryfall API + MTGGoldfish metagame data
-// ============================================================
+// =======================================
 // Setup:
 //   1. npm install
 //   2. Fill in your credentials in .env
 //   3. node index.js
-// ============================================================
+// =======================================
 
 require("dotenv").config();
 
@@ -24,7 +20,6 @@ const { REST }    = require("@discordjs/rest");
 const { Routes }  = require("discord-api-types/v10");
 const cheerio     = require("cheerio");
 
-// ─── Config (from .env) ────────────────────────────────────────
 const TOKEN          = process.env.DISCORD_TOKEN;
 const APPLICATION_ID = process.env.APPLICATION_ID;
 const GUILD_ID       = process.env.GUILD_ID || "";
@@ -37,12 +32,90 @@ if (!TOKEN || !APPLICATION_ID) {
 const SCRYFALL  = "https://api.scryfall.com";
 const PAGE_SIZE = 5;
 
+//  SECURITY: Fetch timeouts + size caps
+
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_BODY_BYTES   = 5 * 1024 * 1024;
+async function safeFetch(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function safeText(res) {
+  const declared = Number(res.headers.get("content-length"));
+  if (declared && declared > MAX_BODY_BYTES) {
+    throw new Error(`Response too large: ${declared} bytes (cap ${MAX_BODY_BYTES})`);
+  }
+  const text = await res.text();
+  if (text.length > MAX_BODY_BYTES) {
+    throw new Error(`Response too large: ${text.length} bytes (cap ${MAX_BODY_BYTES})`);
+  }
+  return text;
+}
+
+async function safeJson(res) {
+  return JSON.parse(await safeText(res));
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SECURITY: Per-user rate limiting
+// ══════════════════════════════════════════════════════════════
+
+// Cheap lookups get a short cooldown; /synergy is expensive it gets a little nuts and can trigger multiple Scryfall searches in one go
+// (up to 8 Scryfall searches per call) so it gets a longer cooldown to prevent abuse and protect Scryfall's API.
+const COOLDOWN_MS = {
+  default: 3_000,
+  synergy: 10_000,
+};
+
+const userCooldowns = new Map(); // `${userId}:${command}` -> timestamp
+
+function checkCooldown(userId, command) {
+  const key    = `${userId}:${command}`;
+  const window = COOLDOWN_MS[command] ?? COOLDOWN_MS.default;
+  const now    = Date.now();
+  const last   = userCooldowns.get(key);
+
+  if (last && now - last < window) {
+    return Math.ceil((window - (now - last)) / 1000);
+  }
+  userCooldowns.set(key, now);
+  return 0;
+}
+
+// Periodically purge stale cooldown entries so the Map can't grow unbounded.
+setInterval(() => {
+  const now = Date.now();
+  const maxWindow = Math.max(...Object.values(COOLDOWN_MS));
+  for (const [key, ts] of userCooldowns) {
+    if (now - ts > maxWindow * 2) userCooldowns.delete(key);
+  }
+}, 60_000).unref();
+
+const ALLOWED_MTGTOP8_HOSTS = new Set(["www.mtgtop8.com", "mtgtop8.com"]);
+
+function safeMTGTop8Url(rawHref) {
+  if (!rawHref || typeof rawHref !== "string") return MTGTOP8;
+  try {
+    const url = new URL(rawHref, `${MTGTOP8}/`);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return MTGTOP8;
+    if (!ALLOWED_MTGTOP8_HOSTS.has(url.hostname)) return MTGTOP8;
+    return url.toString();
+  } catch {
+    return MTGTOP8;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════
 //  SLASH COMMAND DEFINITIONS
 // ══════════════════════════════════════════════════════════════
 
 const commands = [
-  // /get
   new SlashCommandBuilder()
     .setName("get")
     .setDescription("Look up a Magic: The Gathering card")
@@ -125,9 +198,9 @@ async function registerCommands() {
 // ══════════════════════════════════════════════════════════════
 
 async function scryfallFetch(url) {
-  const res = await fetch(url);
+  const res = await safeFetch(url);
   if (!res.ok) return null;
-  return res.json();
+  return safeJson(res);
 }
 
 async function scryfallSearch(query, n = 10) {
@@ -137,7 +210,6 @@ async function scryfallSearch(query, n = 10) {
   return data.data.slice(0, n);
 }
 
-// ─── Rarity → embed color ─────────────────────────────────────
 const RARITY_COLOR = {
   common:   0x9E9E9E,
   uncommon: 0x78909C,
@@ -155,14 +227,14 @@ async function fetchCard(name, setCode) {
   let url = `${SCRYFALL}/cards/named?fuzzy=${encodeURIComponent(name)}`;
   if (setCode) url += `&set=${encodeURIComponent(setCode)}`;
 
-  const res = await fetch(url);
+  const res = await safeFetch(url);
   if (!res.ok) {
     if (res.status === 404) {
-      const searchRes = await fetch(
+      const searchRes = await safeFetch(
         `${SCRYFALL}/cards/search?q=${encodeURIComponent(name)}&order=name&limit=5`
       );
       if (searchRes.ok) {
-        const searchData = await searchRes.json();
+        const searchData = await safeJson(searchRes);
         const suggestions = searchData.data.map(c => `\`${c.name}\``).join(", ");
         return { error: `Card not found. Did you mean: ${suggestions}?` };
       }
@@ -170,7 +242,7 @@ async function fetchCard(name, setCode) {
     }
     return { error: `Scryfall API error: ${res.status}` };
   }
-  return res.json();
+  return safeJson(res);
 }
 
 function buildCardEmbed(card) {
@@ -446,10 +518,10 @@ async function fetchMTGTop8Meta(formatCode, limit = 5) {
 
   const url = `${MTGTOP8}/format?f=${formatCode}&date_start=${fmtTop8Date(since)}&date_end=${fmtTop8Date(now)}`;
 
-  const res = await fetch(url, { headers: SCRAPE_HEADERS });
+  const res = await safeFetch(url, { headers: SCRAPE_HEADERS });
   if (!res.ok) throw new Error(`MTGTop8 returned HTTP ${res.status}`);
 
-  const html = await res.text();
+  const html = await safeText(res);
   const $    = cheerio.load(html);
   const decks = [];
 
@@ -463,8 +535,7 @@ async function fetchMTGTop8Meta(formatCode, limit = 5) {
 
     const anchor  = $(cells[0]).find("a").first();
     const name    = anchor.text().trim();
-    const href    = anchor.attr("href") ?? "";
-    const deckUrl = href ? `${MTGTOP8}/${href}` : MTGTOP8;
+    const deckUrl = safeMTGTop8Url(anchor.attr("href"));
 
     // Second cell is the percentage (e.g. "14%")
     const shareTxt = $(cells[1]).text().trim().replace(/[^0-9.%]/g, "");
@@ -480,8 +551,7 @@ async function fetchMTGTop8Meta(formatCode, limit = 5) {
       if (decks.length >= limit) return false;
 
       const name    = $(anchor).text().trim();
-      const href    = $(anchor).attr("href") ?? "";
-      const deckUrl = href ? `${MTGTOP8}/${href}` : MTGTOP8;
+      const deckUrl = safeMTGTop8Url($(anchor).attr("href"));
 
       // Grab the sibling td for percentage
       const pctCell  = $(anchor).closest("tr").find("td").eq(1);
@@ -626,7 +696,6 @@ function buildModernMetaEmbed({ decks, since, now }) {
 //  /upcomingsets — UPCOMING SET RELEASE DATES (Scryfall)
 // ══════════════════════════════════════════════════════════════
 
-// Set types to show — excludes tokens, memorabilia, promo-only oddities
 const RELEVANT_SET_TYPES = new Set([
   "core", "expansion", "masters", "draft_innovation",
   "commander", "funny", "starter", "box", "premium_deck",
@@ -634,7 +703,6 @@ const RELEVANT_SET_TYPES = new Set([
   "planechase", "archenemy", "masterpiece",
 ]);
 
-// Map set type codes to friendly labels
 const SET_TYPE_LABEL = {
   core:            "Core Set",
   expansion:       "Expansion",
@@ -659,7 +727,7 @@ function releaseEmoji(daysUntil) {
   if (daysUntil <= 7)  return "🔥"; // dropping very soon
   if (daysUntil <= 30) return "📅"; // within a month
   if (daysUntil <= 90) return "🗓️"; // within a quarter
-  return "🔮";                       // far out
+  return "🔮";
 }
 
 async function fetchUpcomingSets() {
@@ -731,9 +799,6 @@ function buildUpcomingSetsEmbed(sets) {
   return embed;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  DISCORD CLIENT
-// ══════════════════════════════════════════════════════════════
 
 const client   = new Client({ intents: [GatewayIntentBits.Guilds] });
 const sessions = new Map(); // synergy pagination state
@@ -745,7 +810,16 @@ client.once("ready", () => {
 
 client.on("interactionCreate", async interaction => {
 
-  // ── /get ─────────────────────────────────────────────────────
+  if (interaction.isChatInputCommand()) {
+    const wait = checkCooldown(interaction.user.id, interaction.commandName);
+    if (wait > 0) {
+      return interaction.reply({
+        content: `⏳ Slow down! Please wait **${wait}s** before using \`/${interaction.commandName}\` again.`,
+        ephemeral: true,
+      });
+    }
+  }
+
   if (interaction.isChatInputCommand() && interaction.commandName === "get") {
     await interaction.deferReply();
 
@@ -757,7 +831,6 @@ client.on("interactionCreate", async interaction => {
     return interaction.editReply({ embeds: [buildCardEmbed(card)] });
   }
 
-  // ── /synergy ─────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "synergy") {
     await interaction.deferReply();
 
@@ -800,7 +873,6 @@ client.on("interactionCreate", async interaction => {
     return interaction.editReply({ embeds: [embed], components: totalPages > 1 ? [row] : [] });
   }
 
-  // ── /stndmeta ────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "stndmeta") {
     await interaction.deferReply();
 
@@ -816,7 +888,6 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ── /cmdrmeta ────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "cmdrmeta") {
     await interaction.deferReply();
 
@@ -832,7 +903,6 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ── /mdrnmeta ────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "mdrnmeta") {
     await interaction.deferReply();
 
@@ -848,7 +918,6 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ── /upcomingsets ────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "upcomingsets") {
     await interaction.deferReply();
 
@@ -864,7 +933,6 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // ── Pagination buttons (/synergy) ────────────────────────────
   if (interaction.isButton()) {
     const [action, sessionKey] = interaction.customId.split("|");
     const session = sessions.get(sessionKey);
@@ -888,9 +956,6 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════
-//  BOOT
-// ══════════════════════════════════════════════════════════════
 
 (async () => {
   await registerCommands();
