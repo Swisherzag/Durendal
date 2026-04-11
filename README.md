@@ -17,6 +17,7 @@ So I built this Discord bot that lets you look up Magic cards, find commander sy
 | `/stndmeta` | Top 5 Standard meta decks right now |
 | `/cmdrmeta` | Top 5 cEDH Commander meta decks right now |
 | `/mdrnmeta` | Top 5 Modern meta decks right now |
+| `/upcomingsets` | A list of upcoming sets and variations of said new sets along with release dates |
 
 All card data comes from **Scryfall** (free, no key needed) and meta data comes from **MTGGoldfish**. No sketchy stuff.
 
@@ -178,7 +179,7 @@ Same deal but for Modern:
 → Double-check your bot token and application ID are correct in `.env`.
 
 **Meta commands return no data**
-→ MTGGoldfish may be temporarily down or may have updated their page layout. Try again in a bit.
+→ MTGTop8 may be temporarily down or may have updated their page layout. Try again in a bit.
 
 ---
 
