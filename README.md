@@ -4,22 +4,43 @@
 
 ---
 
-So I built this Discord bot that lets you look up Magic cards, find commander synergies, and check what decks are slapping in the current meta — all without leaving Discord. Pretty sick, right? Here's everything you need to know to get it running, even if you've never touched a Discord bot before.
+So I built this Discord bot that lets you look up Magic cards, find commander synergies, dig up infinite combos, read official rulings, track upcoming spoilers, and check what decks are slapping across every major format — all without leaving Discord. Pretty sick, right? Here's everything you need to know to get it running, even if you've never touched a Discord bot before.
 
 ---
 
 ## ✨ What It Can Do
 
+### 🃏 Card & Deck Tools
 | Command | What it does |
 |---|---|
 | `/get` | Look up any MTG card — art, stats, price, the works |
 | `/synergy` | Give it a Commander and it'll find cards that vibe with it |
-| `/stndmeta` | Top 5 Standard meta decks right now |
-| `/cmdrmeta` | Top 5 cEDH Commander meta decks right now |
-| `/mdrnmeta` | Top 5 Modern meta decks right now |
-| `/upcomingsets` | A list of upcoming sets and variations of said new sets along with release dates |
+| `/combo` | Infinite combos featuring a card (via Commander Spellbook) |
+| `/rulings` | Official rulings for any card (via Scryfall) |
 
-All card data comes from **Scryfall** (free, no key needed) and meta data comes from **MTGGoldfish**. No sketchy stuff.
+### 🆕 Set & Spoiler Info
+| Command | What it does |
+|---|---|
+| `/upcomingsets` | Next 10 upcoming MTG set release dates |
+| `/spoilers` | Latest previewed cards from the upcoming set (or a set you pick) |
+
+### 🏆 Metagame (Top 5 decks, last 90 days)
+| Command | Format |
+|---|---|
+| `/stndmeta` | Standard |
+| `/mdrnmeta` | Modern |
+| `/pioneer` | Pioneer |
+| `/pauper` | Pauper (commons-only) |
+| `/legacy` | Legacy |
+| `/vintage` | Vintage |
+| `/cmdrmeta` | cEDH Commander |
+
+### 🖱️ Context Menu
+Right-click (or tap-and-hold on mobile) any message → **Apps** → **Lookup MTG Cards**. The bot scans the message for `[[card name]]` references and replies with full card info — perfect for decklists and quick references.
+
+---
+
+Card data comes from **[Scryfall](https://scryfall.com)**, combos come from **[Commander Spellbook](https://commanderspellbook.com)**, and metagame data is scraped from **[MTGTop8](https://www.mtgtop8.com)**. All free, all public, no API keys required.
 
 ---
 
@@ -108,7 +129,7 @@ If everything went right you'll see something like:
 
 ```
 ⏳ Registering slash commands...
-✅ /get, /synergy, /stndmeta, /cmdrmeta, /mdrnmeta registered globally.
+✅ /get, /synergy, /stndmeta, /cmdrmeta, /mdrnmeta, /pioneer, /pauper, /legacy, /vintage, /upcomingsets, /combo, /rulings, /spoilers + "Lookup MTG Cards" (context) registered globally.
 ✅ Logged in as YourBotName#1234
 ```
 
@@ -119,7 +140,7 @@ Head to your Discord server and try typing `/get` — the command should pop up!
 ## 🃏 Using the Commands
 
 ### `/get`
-Look up any card by name. Partial names work too.
+Look up any card by name. Partial names work too, and autocomplete will suggest as you type.
 ```
 /get card:Lightning Bolt
 /get card:Bolt          ← still finds it
@@ -139,28 +160,61 @@ Results are paginated — use the ◀ ▶ buttons to flip through pages. Each ca
 
 ---
 
-### `/stndmeta`
-No options needed, just run it:
+### `/combo`
+Find infinite combos featuring a card, pulled from Commander Spellbook.
 ```
-/stndmeta
+/combo card:Thassa's Oracle
+/combo card:Dramatic Reversal
 ```
-Pulls the top 5 Standard meta decks from MTGGoldfish. Shows meta share %, price, and a link to the full decklist.
+Shows all the pieces needed, what the combo produces (infinite mana, win the game, etc.), color identity, and a link to the full write-up. Paginated.
 
 ---
 
-### `/cmdrmeta`
-Same deal but for competitive EDH (cEDH):
+### `/rulings`
+Official rulings for a card — useful for the weird edge cases that always come up.
 ```
-/cmdrmeta
+/rulings card:Stasis
+/rulings card:Oboro, Palace in the Clouds
+```
+Each ruling shows its date and source (Wizards of the Coast or Scryfall). Paginated for cards with lots of rulings.
+
+---
+
+### `/spoilers`
+Latest previewed cards from the upcoming set — ordered by when they were spoiled.
+```
+/spoilers                ← auto-picks the next upcoming set
+/spoilers set:fdn        ← or specify a set code
+```
+Shows preview date and source for each card. Perfect for keeping up with preview season.
+
+---
+
+### `/upcomingsets`
+No options — just run it:
+```
+/upcomingsets
+```
+Shows the next 10 upcoming MTG releases with dates, set types, and urgency emojis (🔥 if it drops within a week).
+
+---
+
+### Metagame commands
+All work the same way — no options needed. Each pulls the top 5 decks from MTGTop8 over the last 90 days, with meta share %, a neat ASCII bar graph, and a link to the full deck breakdown.
+```
+/stndmeta    ← Standard
+/mdrnmeta    ← Modern
+/pioneer     ← Pioneer
+/pauper      ← Pauper
+/legacy      ← Legacy
+/vintage     ← Vintage
+/cmdrmeta    ← cEDH Commander
 ```
 
 ---
 
-### `/mdrnmeta`
-Same deal but for Modern:
-```
-/mdrnmeta
-```
+### "Lookup MTG Cards" (context menu)
+Right-click any message → **Apps** → **Lookup MTG Cards**. The bot scans the message for `[[card name]]` references (up to 5 unique) and posts full card embeds for each. If someone posts a decklist or discusses cards in `[[brackets]]`, this is the fastest way to look them all up at once.
 
 ---
 
@@ -181,6 +235,24 @@ Same deal but for Modern:
 **Meta commands return no data**
 → MTGTop8 may be temporarily down or may have updated their page layout. Try again in a bit.
 
+**Autocomplete isn't showing suggestions**
+→ Autocomplete needs at least 2 characters before it fires. If it still doesn't work, the bot process may be down — check your terminal.
+
+**"Lookup MTG Cards" doesn't appear in the Apps menu**
+→ Global commands can take up to an hour to propagate. Either wait it out or set `GUILD_ID` in `.env` to have it register instantly on your server.
+
+---
+
+## ⚡ Quality-of-Life Features
+
+A few things running quietly under the hood that make the bot nicer to use:
+
+- **Autocomplete on card names** — start typing a card or commander and Discord shows live suggestions straight from Scryfall's database. Works on `/get`, `/synergy`, `/combo`, and `/rulings`. No more guessing the spelling of "Ulamog, the Infinite Gyre" or "Jaya Ballard, Task Mage".
+- **In-memory LRU cache for Scryfall** — repeated lookups are served from memory for up to 5 minutes. A fresh `/synergy` call fires 8 searches behind the scenes, so this matters: call it twice for the same commander and the second run is basically instant.
+- **Per-user cooldowns** — 10 seconds on `/synergy` (it hits Scryfall hard), 3 seconds on everything else. Stops accidental spam and keeps the bot friendly to the free APIs it relies on.
+- **Paginated embeds** — `/synergy`, `/combo`, `/rulings`, and `/spoilers` use ◀ ▶ buttons so long result lists stay readable.
+- **Fetch safety** — all outbound HTTP calls have a 10s timeout and a 5MB response cap, so a misbehaving upstream can't hang or memory-bomb the bot.
+
 ---
 
 ## 📦 Dependencies
@@ -191,7 +263,7 @@ Same deal but for Modern:
 | `@discordjs/rest` | Handles slash command registration |
 | `discord-api-types` | Type definitions for the Discord API |
 | `dotenv` | Loads your `.env` credentials |
-| `cheerio` | Scrapes metagame data from MTGGoldfish |
+| `cheerio` | Scrapes metagame data from MTGTop8 |
 
 ---
 
